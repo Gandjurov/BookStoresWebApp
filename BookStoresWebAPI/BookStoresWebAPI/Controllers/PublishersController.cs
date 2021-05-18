@@ -32,9 +32,24 @@ namespace BookStoresWebAPI.Controllers
             var publisher = await dbContext.Publishers.FindAsync(id);
 
             if (publisher == null)
-            {
                 return NotFound();
-            }
+
+            return publisher;
+        }
+
+        // GET: api/Publishers/5
+        [HttpGet("GetPublisherDetails/{id}")]
+        public ActionResult<Publisher> GetPublisherDetails(int id)
+        {
+            var publisher = dbContext.Publishers
+                                     .Include(pub => pub.Books)
+                                        .ThenInclude(book => book.Sales)
+                                     .Include(pub => pub.Users)
+                                     .Where(pub => pub.PubId == id)
+                                     .FirstOrDefault();
+
+            if (publisher == null)
+                return NotFound();
 
             return publisher;
         }
@@ -44,9 +59,7 @@ namespace BookStoresWebAPI.Controllers
         public async Task<IActionResult> PutPublisher(int id, Publisher publisher)
         {
             if (id != publisher.PubId)
-            {
                 return BadRequest();
-            }
 
             dbContext.Entry(publisher).State = EntityState.Modified;
 
@@ -85,9 +98,7 @@ namespace BookStoresWebAPI.Controllers
         {
             var publisher = await dbContext.Publishers.FindAsync(id);
             if (publisher == null)
-            {
                 return NotFound();
-            }
 
             dbContext.Publishers.Remove(publisher);
             await dbContext.SaveChangesAsync();
