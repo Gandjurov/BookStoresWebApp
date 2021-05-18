@@ -39,19 +39,38 @@ namespace BookStoresWebAPI.Controllers
 
         // GET: api/Publishers/5
         [HttpGet("GetPublisherDetails/{id}")]
-        public ActionResult<Publisher> GetPublisherDetails(int id)
+        public async Task<ActionResult<Publisher>> GetPublisherDetails(int id)
         {
-            var publishers = dbContext.Publishers
-                                     .Include(pub => pub.Books)
-                                        .ThenInclude(book => book.Sales)
-                                     .Include(pub => pub.Users)
-                                     .Where(pub => pub.PubId == id)
-                                     .FirstOrDefault();
+            // Eager Loading
+            //var publisher = dbContext.Publishers
+            //                         .Include(pub => pub.Books)
+            //                            .ThenInclude(book => book.Sales)
+            //                         .Include(pub => pub.Users)
+            //                         .Where(pub => pub.PubId == id)
+            //                         .FirstOrDefault();
 
-            if (publishers == null)
+            //Explicit Loading
+            var publisher = await dbContext.Publishers.SingleAsync(pub => pub.PubId == id);
+
+            dbContext.Entry(publisher)
+                     .Collection(pub => pub.Users)
+                     .Load();
+
+            dbContext.Entry(publisher)
+                     .Collection(pub => pub.Books)
+                     .Query()
+                     .Include(book => book.Sales)
+                     .Load();
+
+            var user = await dbContext.Users.SingleAsync(usr => usr.UserId == 1);
+            dbContext.Entry(user)
+                     .Reference(usr => usr.Role)
+                     .Load();
+
+            if (publisher == null)
                 return NotFound();
 
-            return publishers;
+            return publisher;
         }
 
         // Post: api/Publishers/5
