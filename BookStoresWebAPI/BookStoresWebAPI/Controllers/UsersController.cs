@@ -16,7 +16,7 @@ using System.Threading.Tasks;
 
 namespace BookStoresWebAPI.Controllers
 {
-    [Authorize]
+    //[Authorize]
     public class UsersController : ApiController
     {
         private readonly BookStoresDBContext dbContext;
@@ -28,14 +28,14 @@ namespace BookStoresWebAPI.Controllers
             this.jwtSettings = jwtSettings.Value;
         }
 
-        // GET: api/<UsersController>
+        // GET: <UsersController>
         [HttpGet]
         public async Task<ActionResult<IEnumerable<User>>> GetUsers()
         {
             return await dbContext.Users.ToListAsync();
         }
 
-        // GET api/<UsersController>/5
+        // GET <UsersController>/5
         [HttpGet("{id}")]
         public async Task<ActionResult<User>> GetUser(int id)
         {
@@ -47,7 +47,21 @@ namespace BookStoresWebAPI.Controllers
             return user;
         }
 
-        [HttpGet("Login")]
+        // GET: Users/5
+        [HttpGet("[action]/{id}")]
+        public async Task<ActionResult<User>> GetUserDetails(int id)
+        {
+            var user = await dbContext.Users.Include(u => u.Role)
+                                            .Where(u => u.UserId == id)
+                                            .FirstOrDefaultAsync();
+
+            if (user == null)
+                return NotFound();
+
+            return user;
+        }
+
+        [HttpPost("Login")]
         public async Task<ActionResult<UserWithToken>> Login([FromBody] User user)
         {
             user = await dbContext.Users.Where(u => u.EmailAddress == user.EmailAddress
@@ -55,7 +69,7 @@ namespace BookStoresWebAPI.Controllers
 
             UserWithToken userWithToken = null;
 
-            if (user == null)
+            if (user != null)
             {
                 RefreshToken refreshToken = GenerateRefreshToken();
                 user.RefreshTokens.Add(refreshToken);
@@ -74,10 +88,41 @@ namespace BookStoresWebAPI.Controllers
             return userWithToken;
         }
 
-        [HttpGet("RefreshToken")]
+        // POST: Users
+        [HttpPost("[action]")]
+        public async Task<ActionResult<UserWithToken>> RegisterUser([FromBody] User user)
+        {
+            dbContext.Users.Add(user);
+            await dbContext.SaveChangesAsync();
+
+            //load role for registered user
+            user = await dbContext.Users.Include(u => u.Role)
+                                        .Where(u => u.UserId == user.UserId).FirstOrDefaultAsync();
+
+            UserWithToken userWithToken = null;
+
+            if (user != null)
+            {
+                RefreshToken refreshToken = GenerateRefreshToken();
+                user.RefreshTokens.Add(refreshToken);
+                await dbContext.SaveChangesAsync();
+
+                userWithToken = new UserWithToken(user);
+                userWithToken.RefreshToken = refreshToken.Token;
+            }
+
+            if (userWithToken == null)
+                return NotFound();
+
+            // sign your token here...
+            userWithToken.AccessToken = GenerateAccessToken(user.UserId);
+            return userWithToken;
+        }
+
+        [HttpPost("[action]")]
         public async Task<ActionResult<UserWithToken>> RefreshToken([FromBody] RefreshRequest refreshRequest)
         {
-            User user = GetUserFromAccessToken(refreshRequest.AccessToken);
+            User user = await GetUserFromAccessToken(refreshRequest.AccessToken);
 
             if (user != null && ValidateRefreshToken(user, refreshRequest.RefreshToken))
             {
@@ -105,7 +150,8 @@ namespace BookStoresWebAPI.Controllers
             return user;
         }
 
-        // POST api/<UsersController>
+        // POST <UsersController>
+        [HttpPost("CreateUser")]
         public async Task<ActionResult<User>> PostUser(User user)
         {
             dbContext.Users.Add(user);
@@ -114,9 +160,9 @@ namespace BookStoresWebAPI.Controllers
             return CreatedAtAction("GetUser", new { id = user.PubId }, user);
         }
 
-        // PUT api/<UsersController>/5
-        [HttpPut("{id}")]
-        public async Task<IActionResult> Put(int id, [FromBody] User user)
+        // PUT <UsersController>/5
+        [HttpPut("UpdateUser/{id}")]
+        public async Task<IActionResult> PutUser(int id, [FromBody] User user)
         {
             if (id != user.PubId)
                 return BadRequest();
@@ -142,8 +188,8 @@ namespace BookStoresWebAPI.Controllers
             return NoContent();
         }
 
-        // DELETE api/<UsersController>/5
-        [HttpDelete("{id}")]
+        // DELETE <UsersController>/5
+        [HttpDelete("[action]/{id}")]
         public async Task<IActionResult> DeleteUser(int id)
         {
             var user = await dbContext.Users.FindAsync(id);
@@ -173,33 +219,41 @@ namespace BookStoresWebAPI.Controllers
 
             return false;
         }
-        private User GetUserFromAccessToken(string accessToken)
+        private async Task<User> GetUserFromAccessToken(string accessToken)
         {
-            var tokenHandler = new JwtSecurityTokenHandler();
-            var key = Encoding.ASCII.GetBytes(jwtSettings.SecretKey);
-
-            var tokenValidationParameters = new TokenValidationParameters
+            try
             {
-                ValidateIssuerSigningKey = true,
-                IssuerSigningKey = new SymmetricSecurityKey(key),
-                ValidateIssuer = false,
-                ValidateAudience = false,
-                ClockSkew = TimeSpan.Zero
-            };
+                var tokenHandler = new JwtSecurityTokenHandler();
+                var key = Encoding.ASCII.GetBytes(jwtSettings.SecretKey);
 
-            SecurityToken securityToken;
-            var principle = tokenHandler.ValidateToken(accessToken, tokenValidationParameters, out securityToken);
+                var tokenValidationParameters = new TokenValidationParameters
+                {
+                    ValidateIssuerSigningKey = true,
+                    IssuerSigningKey = new SymmetricSecurityKey(key),
+                    ValidateIssuer = false,
+                    ValidateAudience = false,
+                    ClockSkew = TimeSpan.Zero
+                };
 
-            JwtSecurityToken jwtSecurityToken = securityToken as JwtSecurityToken;
+                SecurityToken securityToken;
+                var principle = tokenHandler.ValidateToken(accessToken, tokenValidationParameters, out securityToken);
 
-            if (jwtSecurityToken != null && jwtSecurityToken.Header.Alg.Equals(SecurityAlgorithms.HmacSha256, StringComparison.InvariantCultureIgnoreCase))
+                JwtSecurityToken jwtSecurityToken = securityToken as JwtSecurityToken;
+
+                if (jwtSecurityToken != null && jwtSecurityToken.Header.Alg.Equals(SecurityAlgorithms.HmacSha256, StringComparison.InvariantCultureIgnoreCase))
+                {
+                    var userId = principle.FindFirst(ClaimTypes.Name)?.Value;
+
+                    return await dbContext.Users.Include(u => u.Role)
+                                        .Where(u => u.UserId == Convert.ToInt32(userId)).FirstOrDefaultAsync();
+                }
+            }
+            catch (Exception)
             {
-                var userId = principle.FindFirst(ClaimTypes.Name)?.Value;
-
-                return dbContext.Users.Where(usr => usr.UserId == Convert.ToInt32(User)).FirstOrDefault();
+                return new User();
             }
 
-            return null;
+            return new User();
         }
         private string GenerateAccessToken(int userId)
         {
