@@ -18,8 +18,8 @@ namespace BookStoresWebAPI.Controllers
             dbContext = context;
         }
 
-        // GET: api/Publishers
-        [HttpGet]
+        // GET: Publishers
+        [HttpGet("[action]")]
         public async Task<ActionResult<IEnumerable<Publisher>>> GetPublishers()
         {
             return await dbContext.Publishers.ToListAsync();
@@ -118,7 +118,7 @@ namespace BookStoresWebAPI.Controllers
         }
 
         // PUT: api/Publishers/5
-        [HttpPut("{id}")]
+        [HttpPut("UpdatePublisher/{id}")]
         public async Task<IActionResult> PutPublisher(int id, Publisher publisher)
         {
             if (id != publisher.PubId)
@@ -146,7 +146,7 @@ namespace BookStoresWebAPI.Controllers
         }
 
         // POST: api/Publishers
-        [HttpPost]
+        [HttpPost("CreatePublisher")]
         public async Task<ActionResult<Publisher>> PostPublisher(Publisher publisher)
         {
             dbContext.Publishers.Add(publisher);
